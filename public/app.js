@@ -24,10 +24,17 @@ const state = {
 };
 
 const el = {
+  app: document.getElementById("app"),
   sidebar: document.getElementById("sidebar"),
   sidebarResizer: document.getElementById("sidebar-resizer"),
+  sidebarToggleBtn: document.getElementById("sidebar-toggle-btn"),
+  sidebarCloseBtn: document.getElementById("sidebar-close-btn"),
+  sidebarBackdrop: document.getElementById("sidebar-backdrop"),
+  mobileCurrentFile: document.getElementById("mobile-current-file"),
   openFolderBtn: document.getElementById("open-folder-btn"),
+  folderInputFallback: document.getElementById("folder-input-fallback"),
   unsupportedNote: document.getElementById("unsupported-browser-note"),
+  fallbackModeNote: document.getElementById("fallback-mode-note"),
   recentFoldersHeader: document.getElementById("recent-folders-header"),
   recentArrow: document.getElementById("recent-arrow"),
   recentList: document.getElementById("recent-list"),
@@ -68,10 +75,18 @@ function fileIconSVG(ext) {
 
 // ---------- Init ----------
 
+const supportsFileSystemAccess = "showDirectoryPicker" in window;
+const supportsDirectoryInput = "webkitdirectory" in document.createElement("input");
+
 async function init() {
-  if (!("showDirectoryPicker" in window)) {
+  if (!supportsFileSystemAccess && !supportsDirectoryInput) {
     el.unsupportedNote.classList.remove("hidden");
     el.openFolderBtn.disabled = true;
+  } else if (!supportsFileSystemAccess) {
+    // Browser can still open a folder's files (e.g. mobile Safari/Firefox),
+    // just can't keep a reusable handle for it — no Recent Folders/auto-resume.
+    el.fallbackModeNote.classList.remove("hidden");
+    document.getElementById("recent-folders").classList.add("hidden");
   }
 
   restoreSidebarWidth();
@@ -79,6 +94,10 @@ async function init() {
   initSidebarResizer();
   initRecentFoldersToggle();
   initGlobalDismissHandlers();
+  initMobileSidebarToggle();
+  initTabBarWheelScroll();
+
+  if (!supportsFileSystemAccess) return; // nothing to resume in fallback mode
 
   await renderRecentFolders();
 
@@ -116,15 +135,43 @@ function showReconnectBanner(handle) {
 }
 
 el.openFolderBtn.addEventListener("click", async () => {
-  try {
-    const dirHandle = await window.showDirectoryPicker();
-    el.reconnectBanner.classList.add("hidden");
-    openFolderHandle(dirHandle);
-  } catch (err) {
-    // User cancelled the picker — nothing to do.
-    if (err.name !== "AbortError") console.error(err);
+  if (supportsFileSystemAccess) {
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      el.reconnectBanner.classList.add("hidden");
+      openFolderHandle(dirHandle);
+    } catch (err) {
+      // User cancelled the picker — nothing to do.
+      if (err.name !== "AbortError") console.error(err);
+    }
+  } else if (supportsDirectoryInput) {
+    // Reset the value first so selecting the same folder twice in a row
+    // still fires a change event.
+    el.folderInputFallback.value = "";
+    el.folderInputFallback.click();
   }
 });
+
+el.folderInputFallback.addEventListener("change", (e) => {
+  const fileList = e.target.files;
+  if (fileList && fileList.length) openFolderFileList(fileList);
+});
+
+// ---------- Mobile sidebar drawer (hamburger toggle) ----------
+
+function initMobileSidebarToggle() {
+  el.sidebarToggleBtn.addEventListener("click", () => {
+    el.app.classList.toggle("sidebar-open");
+  });
+  el.sidebarCloseBtn.addEventListener("click", closeMobileSidebar);
+  el.sidebarBackdrop.addEventListener("click", () => {
+    el.app.classList.remove("sidebar-open");
+  });
+}
+
+function closeMobileSidebar() {
+  el.app.classList.remove("sidebar-open");
+}
 
 // ---------- Sidebar resize (mouse-hold drag) ----------
 
@@ -192,6 +239,25 @@ function initGlobalDismissHandlers() {
   window.addEventListener("blur", hideContextMenu);
 }
 
+// ---------- Tab bar: wheel-to-horizontal scroll ----------
+//
+// #tab-bar only scrolls horizontally (overflow-x: auto), but a plain mouse
+// wheel or a trackpad without a horizontal gesture only ever sends a
+// vertical delta — the browser has nothing to do with it, so the bar just
+// sits there. Translate that vertical delta into horizontal scroll instead.
+function initTabBarWheelScroll() {
+  el.tabBar.addEventListener(
+    "wheel",
+    (e) => {
+      if (el.tabBar.scrollWidth <= el.tabBar.clientWidth) return; // nothing to scroll
+      if (e.deltaY === 0) return; // already a horizontal gesture — let it pass through natively
+      el.tabBar.scrollLeft += e.deltaY;
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 // ---------- Folder handling (File System Access API) ----------
 
 // Recursively walk a directory handle collecting .csv/.tsv/.tab/.txt
@@ -244,18 +310,54 @@ async function openFolderHandle(dirHandle) {
     return;
   }
 
-  state.currentFolder = dirHandle.name;
+  applyOpenedFolder(dirHandle.name, files);
+
+  await touchRecentFolder(dirHandle);
+  await renderRecentFolders();
+}
+
+// Fallback for browsers without the File System Access API (mobile Safari,
+// Firefox, older Android WebViews): <input type="file" webkitdirectory>
+// hands us a flat FileList of every file under the picked folder, each
+// carrying a `webkitRelativePath` like "MyFolder/sub/data.tsv". There's no
+// reusable handle here — just File objects — so each gets wrapped in a
+// stub with a `getFile()` method, matching the shape loadFileData() already
+// expects from a real FileSystemFileHandle. No Recent Folders entry is
+// created, since there is nothing we could reopen without the user
+// reselecting the folder again.
+async function openFolderFileList(fileList) {
+  state.fileHandles.clear();
+  const files = [];
+  let rootName = "Folder";
+
+  for (const file of Array.from(fileList)) {
+    const relativePath = file.webkitRelativePath || file.name;
+    const parts = relativePath.split("/");
+    if (parts.length > 1) rootName = parts[0];
+    if (parts.some((p) => p.startsWith("."))) continue;
+    if (parts.some((p) => SKIP_DIRS.has(p))) continue;
+
+    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+    if (!TABLE_EXTENSIONS.has(ext)) continue;
+
+    state.fileHandles.set(relativePath, { getFile: async () => file });
+    files.push({ name: file.name, fullPath: relativePath, relativePath, ext });
+  }
+
+  applyOpenedFolder(rootName, files);
+}
+
+function applyOpenedFolder(name, files) {
+  state.currentFolder = name;
   state.files = files;
   state.fileTree = buildFileTree(files);
   state.expandedFolders = new Set();
   if (settings.get("expandSubfoldersOnOpen")) {
     collectFolderPaths(state.fileTree, state.expandedFolders);
   }
-  el.currentFolderLabel.textContent = dirHandle.name;
+  el.currentFolderLabel.textContent = name;
   renderFileTree();
-
-  await touchRecentFolder(dirHandle);
-  await renderRecentFolders();
+  closeMobileSidebar();
 }
 
 async function renderRecentFolders() {
@@ -402,6 +504,8 @@ async function openFile(f) {
   renderTabBar();
   renderGrid();
   syncActiveHighlight();
+  updateMobileCurrentFileLabel();
+  closeMobileSidebar();
 }
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB safety cap for in-browser grid
@@ -505,6 +609,12 @@ function finishTabsChange() {
   renderTabBar();
   renderGrid();
   syncActiveHighlight();
+  updateMobileCurrentFileLabel();
+}
+
+function updateMobileCurrentFileLabel() {
+  const active = state.openTabs.find((t) => t.fullPath === state.activeTab);
+  el.mobileCurrentFile.textContent = active ? active.name : "Table Viewer";
 }
 
 function renderTabBar() {
@@ -518,6 +628,7 @@ function renderTabBar() {
       renderTabBar();
       renderGrid();
       syncActiveHighlight();
+      updateMobileCurrentFileLabel();
     });
     div.querySelector(".close-tab").addEventListener("click", (e) => {
       e.stopPropagation();

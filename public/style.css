@@ -30,9 +30,24 @@ body {
   font-size: 13px;
 }
 
+html {
+  height: 100%;
+}
+
 #app {
   display: flex;
   height: 100vh;
+  height: 100dvh;
+}
+
+/* --- Mobile topbar (hidden on desktop) --- */
+
+#mobile-topbar {
+  display: none;
+}
+
+#sidebar-backdrop {
+  display: none;
 }
 
 /* --- Custom scrollbars (applies everywhere) --- */
@@ -78,6 +93,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+#sidebar-close-btn {
+  display: none; /* shown only in the mobile off-canvas drawer */
 }
 
 #sidebar-resizer {
@@ -131,6 +150,17 @@ body {
 }
 
 #unsupported-browser-note {
+  padding: 10px 12px;
+  margin: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+#fallback-mode-note {
   padding: 10px 12px;
   margin: 8px;
   font-size: 12px;
@@ -315,7 +345,9 @@ li.tree-file.active > .tree-row {
   background: var(--bg-alt);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  overflow-y: hidden;
   min-height: 32px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab {
@@ -328,6 +360,7 @@ li.tree-file.active > .tree-row {
   cursor: pointer;
   white-space: nowrap;
   font-size: 12px;
+  flex: 0 0 auto; /* never shrink — overflow into #tab-bar's horizontal scroll instead */
 }
 .tab.active {
   background: var(--tab-active);
@@ -586,4 +619,178 @@ table.grid td:nth-child(6n + 7) {
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
+}
+
+/* =========================================================================
+   Responsive / mobile layout
+   Below 768px the sidebar becomes an off-canvas drawer opened by a topbar
+   hamburger button, instead of the permanent side-by-side desktop layout.
+   ========================================================================= */
+
+@media (max-width: 768px) {
+  #app {
+    flex-direction: column;
+  }
+
+  /* --- Topbar with hamburger toggle --- */
+  #mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+  }
+  #sidebar-toggle-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #mobile-current-file {
+    font-size: 13px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --- Sidebar becomes an off-canvas drawer --- */
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 100;
+    width: 84vw;
+    max-width: 340px;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 2px 0 18px rgba(0, 0, 0, 0.4);
+  }
+  #app.sidebar-open #sidebar {
+    transform: translateX(0);
+  }
+
+  /* Dimmed background behind the drawer: always present in the layout
+     (fixed, full-screen) but invisible and non-interactive until the
+     drawer opens, then fades in and becomes clickable — clicking it
+     closes the drawer, same as tapping outside the sidebar. */
+  #sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 99; /* above page content, below #sidebar (z-index: 100) */
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  #app.sidebar-open #sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Drag-resize doesn't make sense with an off-canvas drawer */
+  #sidebar-resizer {
+    display: none;
+  }
+
+  /* Explicit close affordance — the drawer sits on top of (and hides) the
+     topbar's hamburger button while it's open, so it needs its own control */
+  #sidebar-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  /* Leaves room below the floating close button so it doesn't sit on
+     top of the Open Folder button */
+  #folder-picker {
+    padding-top: 46px;
+  }
+
+  #editor-area {
+    width: 100%;
+  }
+
+  /* --- Bigger touch targets --- */
+  #open-folder-btn,
+  .toolbar-btn,
+  .reconnect-btn {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .tree-row,
+  #recent-list li {
+    padding: 9px 6px;
+  }
+
+  table.grid input[type="checkbox"],
+  #recent-list input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  /* --- Toolbar / filter bar stack instead of squeezing --- */
+  /* Sticky horizontally only: it should stay in view while you scroll the
+     table sideways, but scroll away normally on the vertical axis — its
+     height varies as it wraps, which made it an unreliable vertical
+     sticky offset for <thead> below, so the header row is the sole
+     vertical sticky anchor on mobile instead. */
+  #filter-bar {
+    gap: 8px;
+  }
+  #filter-bar .filter-input {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 8px 10px;
+    font-size: 14px; /* avoids iOS Safari auto-zoom on focus */
+  }
+  .toolbar-btns {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  #filter-bar .row-count {
+    flex: 1 1 100%;
+    text-align: right;
+  }
+
+  table.grid thead th,
+  table.grid thead th.checkbox-col {
+    top: 0;
+  }
+
+  /* --- Smooth momentum scrolling on touch devices ---
+     (left off #grid-container: older WebKit has a long-standing bug where
+     -webkit-overflow-scrolling: touch breaks position: sticky children —
+     modern iOS/Android already scroll with momentum by default anyway) */
+  #file-tree-wrap,
+  #recent-list {
+    -webkit-overflow-scrolling: touch;
+  }
 }
