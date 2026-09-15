@@ -1,0 +1,659 @@
+:root {
+  --bg: #1e1e1e;
+  --bg-alt: #252526;
+  --bg-hover: #2a2d2e;
+  --border: #3c3c3c;
+  --text: #cccccc;
+  --text-dim: #8a8a8a;
+  --accent: #007acc;
+  --accent-soft: #094771;
+  --tab-active: #1e1e1e;
+  --tab-inactive: #2d2d2d;
+  --rainbow-1: #61afef;
+  --rainbow-2: #e5c07b;
+  --rainbow-3: #98c379;
+  --rainbow-4: #c678dd;
+  --rainbow-5: #e06c75;
+  --scrollbar-thumb: #4d4d4d;
+  --scrollbar-thumb-hover: #6b6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* --- Custom scrollbars (applies everywhere) --- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 7px;
+  border: 3px solid var(--bg);
+  background-clip: padding-box;
+}
+#grid-container::-webkit-scrollbar-thumb,
+#file-tree-wrap::-webkit-scrollbar-thumb,
+#recent-list::-webkit-scrollbar-thumb,
+#browse-list::-webkit-scrollbar-thumb {
+  border-color: var(--bg-alt);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* --- Sidebar --- */
+
+#sidebar {
+  width: 280px;
+  min-width: 180px;
+  max-width: 640px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#sidebar-resizer {
+  width: 4px;
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+}
+#sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 2px;
+  background: transparent;
+}
+#sidebar-resizer:hover::after,
+#sidebar-resizer.active::after {
+  background: var(--accent);
+}
+
+#folder-picker {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+#browse-folder-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#browse-folder-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* --- Folder browse modal --- */
+
+.hidden {
+  display: none !important;
+}
+
+#browse-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.modal-box {
+  position: relative;
+  width: 520px;
+  max-height: 70vh;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.modal-toolbar {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-toolbar button,
+.modal-footer button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.modal-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.modal-toolbar button:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+
+#browse-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  min-height: 200px;
+}
+#browse-list li {
+  padding: 6px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#browse-list li:hover {
+  background: var(--bg-hover);
+}
+#browse-list li.selected {
+  background: var(--accent-soft);
+}
+#browse-list .empty-note {
+  color: var(--text-dim);
+  cursor: default;
+}
+#browse-list .empty-note:hover {
+  background: transparent;
+}
+
+.modal-footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-footer button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.modal-footer button.primary:hover {
+  background: #0086d1;
+}
+
+#folder-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 2px;
+}
+
+#open-folder-btn {
+  background: var(--accent);
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+#open-folder-btn:hover {
+  background: #0086d1;
+}
+
+#recent-folders,
+#file-tree-wrap {
+  padding: 8px;
+  overflow-y: auto;
+}
+
+#recent-folders {
+  border-bottom: 1px solid var(--border);
+  max-height: 160px;
+}
+#file-tree-wrap {
+  flex: 1;
+}
+
+h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+}
+
+/* --- Collapsible section headers (Recent Folders dropdown) --- */
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+.section-header h3 {
+  margin: 4px 0;
+}
+.section-arrow {
+  font-size: 9px;
+  color: var(--text-dim);
+  display: inline-block;
+  width: 10px;
+  transition: transform 0.1s ease;
+}
+.section-header:hover .section-arrow,
+.section-header:hover h3 {
+  color: var(--text);
+}
+
+#recent-list.collapsed {
+  display: none;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#recent-list li,
+#file-tree li {
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#recent-list li:hover {
+  background: var(--bg-hover);
+}
+
+.file-icon {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.remove-recent {
+  margin-left: auto;
+  opacity: 0.5;
+  cursor: pointer;
+}
+.remove-recent:hover {
+  opacity: 1;
+}
+
+/* --- Folder tree (VSCode-Explorer style) --- */
+
+#file-tree {
+  padding-top: 2px;
+}
+.tree-root,
+.tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px 3px 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-row:hover {
+  background: var(--bg-hover);
+}
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-arrow {
+  font-size: 9px;
+  color: var(--text-dim);
+  width: 10px;
+  flex: 0 0 10px;
+  text-align: center;
+}
+.tree-icon {
+  flex: 0 0 16px;
+  display: block;
+}
+
+li.tree-file.active > .tree-row {
+  background: var(--accent-soft);
+}
+
+/* --- Editor area --- */
+
+#editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+#tab-bar {
+  display: flex;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  min-height: 32px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--tab-inactive);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.tab.active {
+  background: var(--tab-active);
+  border-bottom: 1px solid var(--accent);
+}
+.tab .close-tab {
+  opacity: 0.5;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.tab .close-tab:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+/* --- Right-click context menu (tabs) --- */
+
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 180px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+.context-menu-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu-item:hover {
+  background: var(--accent-soft);
+}
+.context-menu-item.disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+.context-menu-item.disabled:hover {
+  background: transparent;
+}
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+#grid-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+#empty-state {
+  color: var(--text-dim);
+  padding: 40px;
+  text-align: center;
+}
+
+table.grid {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: max-content;
+  min-width: 100%;
+}
+
+table.grid th,
+table.grid td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+table.grid th.checkbox-col,
+table.grid td.checkbox-col {
+  padding: 4px 8px;
+  text-align: center;
+  width: 28px;
+  position: sticky;
+  left: 0;
+  background: var(--bg-alt);
+  z-index: 1;
+}
+table.grid td.checkbox-col {
+  background: var(--bg);
+}
+table.grid tbody tr:nth-child(even) td.checkbox-col {
+  background: #232323;
+}
+table.grid tbody tr:hover td.checkbox-col {
+  background: var(--bg-hover);
+}
+table.grid input[type="checkbox"] {
+  cursor: pointer;
+}
+
+table.grid thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-alt);
+  cursor: pointer;
+  user-select: none;
+  z-index: 1;
+}
+table.grid thead th.checkbox-col {
+  z-index: 2;
+  cursor: default;
+}
+table.grid thead th:hover:not(.checkbox-col) {
+  background: var(--bg-hover);
+}
+
+table.grid tbody tr:nth-child(even) {
+  background: #232323;
+}
+table.grid tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+/* Rainbow column coloring, like Rainbow CSV (offset by the checkbox column) */
+table.grid th:nth-child(6n + 3),
+table.grid td:nth-child(6n + 3) {
+  color: var(--rainbow-1);
+}
+table.grid th:nth-child(6n + 4),
+table.grid td:nth-child(6n + 4) {
+  color: var(--rainbow-2);
+}
+table.grid th:nth-child(6n + 5),
+table.grid td:nth-child(6n + 5) {
+  color: var(--rainbow-3);
+}
+table.grid th:nth-child(6n + 6),
+table.grid td:nth-child(6n + 6) {
+  color: var(--rainbow-4);
+}
+table.grid th:nth-child(6n + 7),
+table.grid td:nth-child(6n + 7) {
+  color: var(--rainbow-5);
+}
+
+#filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+#filter-bar .filter-input {
+  flex: 1;
+  min-width: 160px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+#filter-bar .row-count {
+  color: var(--text-dim);
+  align-self: center;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.toolbar-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 9px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.columns-dropdown {
+  position: relative;
+}
+
+.columns-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  padding: 6px 0;
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.columns-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.columns-panel-item:hover {
+  background: var(--bg-hover);
+}
+.columns-panel-item input {
+  cursor: pointer;
+}
+.columns-panel-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.columns-panel-footer button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 2px 4px;
+}
+.columns-panel-footer button:hover {
+  text-decoration: underline;
+}
+.tree-folder {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Table Viewer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div id="folder-picker">
+          <input
+            id="folder-input"
+            type="text"
+            placeholder="Paste a folder path…"
+          />
+          <button id="browse-folder-btn" title="Browse folders">Browse…</button>
+          <button id="open-folder-btn">Open</button>
+        </div>
+
+        <div id="browse-modal" class="hidden">
+          <div class="modal-backdrop"></div>
+          <div class="modal-box">
+            <div class="modal-header">
+              <span id="browse-current-path">Select a folder</span>
+            </div>
+            <div class="modal-toolbar">
+              <button id="browse-up-btn" disabled>⬆ Up</button>
+            </div>
+            <ul id="browse-list"></ul>
+            <div class="modal-footer">
+              <button id="browse-cancel-btn">Cancel</button>
+              <button id="browse-select-btn" class="primary">
+                Select This Folder
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="recent-folders">
+          <div id="recent-folders-header" class="section-header">
+            <span class="section-arrow" id="recent-arrow">▸</span>
+            <h3>Recent Folders</h3>
+          </div>
+          <ul id="recent-list" class="collapsed"></ul>
+        </div>
+
+        <div id="file-tree-wrap">
+          <h3 id="current-folder-label">No folder open</h3>
+          <ul id="file-tree"></ul>
+        </div>
+      </aside>
+
+      <div id="sidebar-resizer" title="Drag to resize"></div>
+
+      <main id="editor-area">
+        <div id="tab-bar"></div>
+        <div id="grid-container">
+          <div id="empty-state">
+            Open a folder, then click a .csv/.tsv file to view it here.
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div id="context-menu" class="context-menu hidden"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

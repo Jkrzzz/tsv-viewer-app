@@ -1,0 +1,27 @@
+{
+  "name": "tsv-viewer-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
+    "vite": "vite",
+    "dev": "concurrently \"npm run server\" \"npm run vite\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "papaparse": "^5.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "vite": "^8.3.0"
+  }
+}

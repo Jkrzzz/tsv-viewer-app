@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Environment & Secret files
+.env
+.env.local
+.env.*.local
+
+#Storage
+
+user_files/
+uploads/
+
+# Vite & Build outputs
+dist/
+dist-ssr/
+build/
+*.local
+
+# Node.js Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Operating System & IDE junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
