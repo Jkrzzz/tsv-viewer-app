@@ -1,19 +1,49 @@
 import { execSync } from "node:child_process";
 
-const commitMsg = process.argv[2] || "Update";
-const branch = process.argv[3] || "main";
+// Get current active branch as a fallback default
+function getCurrentBranch() {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", { stdio: "pipe" })
+      .toString()
+      .trim();
+  } catch {
+    return "main";
+  }
+}
 
-function run(cmd) {
+// Read positional arguments:
+// process.argv[2] = commit message
+// process.argv[3] = branch name
+const args = process.argv.slice(2);
+const commitMsg = args[0] || "Update";
+const branch = args[1] || getCurrentBranch();
+
+function run(cmd, allowFail = false) {
   console.log(`\n> ${cmd}`);
-  execSync(cmd, { stdio: "inherit" });
+  try {
+    return execSync(cmd, { stdio: allowFail ? "pipe" : "inherit" })?.toString();
+  } catch (error) {
+    if (!allowFail) throw error;
+    return null;
+  }
 }
 
 try {
   run("git add .");
-  run(`git commit -m "${commitMsg}"`);
-  run(`git push origin ${branch}`);
-  run("npm run deploy");
+
+  // Check if there are staged changes to commit
+  const status = run("git status --porcelain", true);
+
+  if (!status || status.trim() === "") {
+    console.log("\n⚠️  No changes to commit. Proceeding to launch app...");
+  } else {
+    run(`git commit -m "${commitMsg}"`);
+    run(`git push origin ${branch}`);
+  }
+
+  // Launch dev server
+  run("npm run dev");
 } catch (error) {
-  console.error("\n❌ Operation failed. Stopping execution.");
+  console.error("\n❌ Git operation failed. Stopping execution.");
   process.exit(1);
 }
