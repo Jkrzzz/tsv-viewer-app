@@ -9,33 +9,15 @@
     <div id="app">
       <aside id="sidebar">
         <div id="folder-picker">
-          <input
-            id="folder-input"
-            type="text"
-            placeholder="Paste a folder path…"
-          />
-          <button id="browse-folder-btn" title="Browse folders">Browse…</button>
-          <button id="open-folder-btn">Open</button>
+          <button id="open-folder-btn">📁 Open Folder…</button>
+        </div>
+        <div id="unsupported-browser-note" class="hidden">
+          This app needs the File System Access API, currently supported in
+          Chrome, Edge, and other Chromium browsers. Please open this page in
+          one of those to browse local folders.
         </div>
 
-        <div id="browse-modal" class="hidden">
-          <div class="modal-backdrop"></div>
-          <div class="modal-box">
-            <div class="modal-header">
-              <span id="browse-current-path">Select a folder</span>
-            </div>
-            <div class="modal-toolbar">
-              <button id="browse-up-btn" disabled>⬆ Up</button>
-            </div>
-            <ul id="browse-list"></ul>
-            <div class="modal-footer">
-              <button id="browse-cancel-btn">Cancel</button>
-              <button id="browse-select-btn" class="primary">
-                Select This Folder
-              </button>
-            </div>
-          </div>
-        </div>
+        <div id="reconnect-banner" class="hidden"></div>
 
         <div id="recent-folders">
           <div id="recent-folders-header" class="section-header">

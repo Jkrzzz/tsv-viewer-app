@@ -1,8 +1,21 @@
 import { settings } from "./settings.js";
 import Papa from "papaparse";
+import {
+  touchRecentFolder,
+  getRecentFolders,
+  removeRecentFolder,
+  getLastOpenedFolder,
+  verifyPermission,
+  permissionState,
+} from "./fsStore.js";
+
+const TABLE_EXTENSIONS = new Set([".csv", ".tsv", ".tab", ".txt"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", ".vscode", "dist", "build"]);
+
 const state = {
-  currentFolder: null,
+  currentFolder: null, // display name of the open folder (handle.name)
   files: [], // flat list [{name, fullPath, relativePath, ext}]
+  fileHandles: new Map(), // fullPath -> FileSystemFileHandle
   fileTree: null, // nested tree built from `files`
   expandedFolders: new Set(), // folder node paths currently expanded
   openTabs: [], // [{fullPath, name}] — order = tab order
@@ -13,28 +26,17 @@ const state = {
 const el = {
   sidebar: document.getElementById("sidebar"),
   sidebarResizer: document.getElementById("sidebar-resizer"),
-  folderInput: document.getElementById("folder-input"),
   openFolderBtn: document.getElementById("open-folder-btn"),
-  browseFolderBtn: document.getElementById("browse-folder-btn"),
+  unsupportedNote: document.getElementById("unsupported-browser-note"),
   recentFoldersHeader: document.getElementById("recent-folders-header"),
   recentArrow: document.getElementById("recent-arrow"),
   recentList: document.getElementById("recent-list"),
+  reconnectBanner: document.getElementById("reconnect-banner"),
   fileTree: document.getElementById("file-tree"),
   currentFolderLabel: document.getElementById("current-folder-label"),
   tabBar: document.getElementById("tab-bar"),
   gridContainer: document.getElementById("grid-container"),
-  browseModal: document.getElementById("browse-modal"),
-  browseCurrentPath: document.getElementById("browse-current-path"),
-  browseUpBtn: document.getElementById("browse-up-btn"),
-  browseList: document.getElementById("browse-list"),
-  browseCancelBtn: document.getElementById("browse-cancel-btn"),
-  browseSelectBtn: document.getElementById("browse-select-btn"),
   contextMenu: document.getElementById("context-menu"),
-};
-
-const browseState = {
-  currentPath: null, // null = showing roots/drives
-  parent: null,
 };
 
 // ---------- Icons (Explorer-style folder / typed file icons) ----------
@@ -67,27 +69,61 @@ function fileIconSVG(ext) {
 // ---------- Init ----------
 
 async function init() {
+  if (!("showDirectoryPicker" in window)) {
+    el.unsupportedNote.classList.remove("hidden");
+    el.openFolderBtn.disabled = true;
+  }
+
   restoreSidebarWidth();
   restoreRecentFoldersCollapsed();
   initSidebarResizer();
   initRecentFoldersToggle();
   initGlobalDismissHandlers();
 
-  await loadRecentFolders();
-  const res = await fetch("/api/folder/last");
-  const { folderPath } = await res.json();
-  if (folderPath) {
-    el.folderInput.value = folderPath;
-    openFolder(folderPath);
+  await renderRecentFolders();
+
+  // Try to resume the last folder. Browsers frequently do NOT keep a
+  // folder-access grant across reloads/restarts, so this is very often
+  // in the "prompt" state rather than "granted" — in that case we can't
+  // silently reopen it (requestPermission requires a user gesture), so
+  // show a one-click banner instead of just doing nothing.
+  const lastHandle = await getLastOpenedFolder();
+  if (lastHandle) {
+    if (await verifyPermission(lastHandle, false)) {
+      openFolderHandle(lastHandle);
+    } else {
+      showReconnectBanner(lastHandle);
+    }
   }
 }
 
-el.openFolderBtn.addEventListener("click", () => {
-  const p = el.folderInput.value.trim();
-  if (p) openFolder(p);
-});
-el.folderInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") el.openFolderBtn.click();
+function showReconnectBanner(handle) {
+  el.reconnectBanner.innerHTML = "";
+  el.reconnectBanner.classList.remove("hidden");
+  const btn = document.createElement("button");
+  btn.className = "reconnect-btn";
+  btn.textContent = `🔓 Reopen "${handle.name}"`;
+  btn.addEventListener("click", async () => {
+    const ok = await verifyPermission(handle, true); // user gesture: OK to request
+    if (ok) {
+      el.reconnectBanner.classList.add("hidden");
+      openFolderHandle(handle);
+    } else {
+      btn.textContent = `Access denied — pick "${handle.name}" again via Open Folder`;
+    }
+  });
+  el.reconnectBanner.appendChild(btn);
+}
+
+el.openFolderBtn.addEventListener("click", async () => {
+  try {
+    const dirHandle = await window.showDirectoryPicker();
+    el.reconnectBanner.classList.add("hidden");
+    openFolderHandle(dirHandle);
+  } catch (err) {
+    // User cancelled the picker — nothing to do.
+    if (err.name !== "AbortError") console.error(err);
+  }
 });
 
 // ---------- Sidebar resize (mouse-hold drag) ----------
@@ -156,122 +192,92 @@ function initGlobalDismissHandlers() {
   window.addEventListener("blur", hideContextMenu);
 }
 
-// ---------- Folder BROWSE modal ----------
+// ---------- Folder handling (File System Access API) ----------
 
-el.browseFolderBtn.addEventListener("click", () => {
-  openBrowseModal(el.folderInput.value.trim() || null);
-});
-el.browseCancelBtn.addEventListener("click", closeBrowseModal);
-el.browseModal
-  .querySelector(".modal-backdrop")
-  .addEventListener("click", closeBrowseModal);
-el.browseUpBtn.addEventListener("click", () => {
-  if (browseState.parent !== null) loadBrowseDir(browseState.parent);
-});
-el.browseSelectBtn.addEventListener("click", () => {
-  if (browseState.currentPath) {
-    el.folderInput.value = browseState.currentPath;
-    closeBrowseModal();
-    openFolder(browseState.currentPath);
+// Recursively walk a directory handle collecting .csv/.tsv/.tab/.txt
+// files, mirroring how the old server-side walk worked. Skips common
+// noise dirs and dotfiles. Populates state.fileHandles as it goes.
+async function walkDirectory(dirHandle, relativePrefix = "") {
+  const results = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (name.startsWith(".")) continue;
+    const relativePath = relativePrefix ? `${relativePrefix}/${name}` : name;
+
+    if (handle.kind === "directory") {
+      if (SKIP_DIRS.has(name)) continue;
+      const nested = await walkDirectory(handle, relativePath);
+      results.push(...nested);
+      continue;
+    }
+
+    const ext = "." + (name.split(".").pop() || "").toLowerCase();
+    if (!TABLE_EXTENSIONS.has(ext)) continue;
+
+    state.fileHandles.set(relativePath, handle);
+    results.push({
+      name,
+      fullPath: relativePath, // no real OS path in the browser sandbox
+      relativePath,
+      ext,
+    });
   }
-});
-
-function openBrowseModal(startPath) {
-  el.browseModal.classList.remove("hidden");
-  loadBrowseDir(startPath);
+  return results;
 }
 
-function closeBrowseModal() {
-  el.browseModal.classList.add("hidden");
-}
-
-async function loadBrowseDir(dirPath) {
-  // Normalize string handling so "" or null triggers /api/browse
-  const url =
-    dirPath !== null && dirPath !== undefined && dirPath !== ""
-      ? `/api/browse?dirPath=${encodeURIComponent(dirPath)}`
-      : "/api/browse";
-
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    // Invalid path — fall back to root list.
-    return loadBrowseDir(null);
-  }
-
-  browseState.currentPath = data.dirPath;
-  browseState.parent = data.parent;
-
-  el.browseCurrentPath.textContent = data.dirPath || "Select a drive / root";
-
-  // FIX 1: Allow parent to be "" (empty string). Only disable when parent is strictly null.
-  el.browseUpBtn.disabled = data.parent === null;
-  el.browseSelectBtn.disabled = !data.dirPath;
-
-  el.browseList.innerHTML = "";
-  const entries = data.entries || [];
-  if (!entries.length) {
-    const li = document.createElement("li");
-    li.className = "empty-note";
-    li.textContent = "(no subfolders here)";
-    el.browseList.appendChild(li);
+async function openFolderHandle(dirHandle) {
+  const ok = await verifyPermission(dirHandle, true);
+  if (!ok) {
+    alert(`Permission to read "${dirHandle.name}" was denied.`);
     return;
   }
-  entries.forEach((entry) => {
-    const li = document.createElement("li");
-    li.innerHTML = `${folderIconSVG(false)}<span>${escapeHtml(entry.name)}</span>`;
-    li.addEventListener("click", () => loadBrowseDir(entry.fullPath));
-    el.browseList.appendChild(li);
-  });
-}
 
-// ---------- Folder handling ----------
-
-async function openFolder(folderPath) {
-  const res = await fetch("/api/folder/open", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folderPath }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    alert(data.error || "Could not open folder");
+  state.fileHandles.clear();
+  let files;
+  try {
+    files = await walkDirectory(dirHandle);
+  } catch (err) {
+    // Most likely the folder was moved/deleted/ejected since it was saved.
+    console.error(err);
+    alert(
+      `Couldn't read "${dirHandle.name}" — it may have been moved, renamed, or deleted.`,
+    );
     return;
   }
-  state.currentFolder = data.folderPath;
-  state.files = data.files;
-  state.fileTree = buildFileTree(data.files);
+
+  state.currentFolder = dirHandle.name;
+  state.files = files;
+  state.fileTree = buildFileTree(files);
   state.expandedFolders = new Set();
   if (settings.get("expandSubfoldersOnOpen")) {
     collectFolderPaths(state.fileTree, state.expandedFolders);
   }
-  el.currentFolderLabel.textContent = data.folderPath;
+  el.currentFolderLabel.textContent = dirHandle.name;
   renderFileTree();
-  loadRecentFolders();
+
+  await touchRecentFolder(dirHandle);
+  await renderRecentFolders();
 }
 
-async function loadRecentFolders() {
-  const res = await fetch("/api/folder/recent");
-  const folders = await res.json();
+async function renderRecentFolders() {
+  const folders = await getRecentFolders();
   el.recentList.innerHTML = "";
-  folders.forEach(({ folderPath }) => {
+  for (const { id, handle, name } of folders) {
+    const permState = await permissionState(handle);
     const li = document.createElement("li");
-    li.innerHTML = `${folderIconSVG(false)}<span title="${escapeHtml(folderPath)}">${escapeHtml(shorten(folderPath))}</span><span class="remove-recent" title="Remove">✕</span>`;
-    li.querySelector("span:nth-child(2)").addEventListener("click", () => {
-      el.folderInput.value = folderPath;
-      openFolder(folderPath);
+    const lockBadge = permState !== "granted" ? `<span class="perm-lock" title="Will ask for permission again">🔒</span>` : "";
+    li.innerHTML = `${folderIconSVG(false)}<span title="${escapeHtml(name)}">${escapeHtml(shorten(name))}</span>${lockBadge}<span class="remove-recent" title="Remove">✕</span>`;
+    li.querySelector("span:nth-child(2)").addEventListener("click", async () => {
+      const ok = await verifyPermission(handle, true); // click = user gesture
+      if (ok) openFolderHandle(handle);
+      else alert(`Permission to read "${name}" was denied.`);
     });
     li.querySelector(".remove-recent").addEventListener("click", async (e) => {
       e.stopPropagation();
-      await fetch("/api/folder/recent", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderPath }),
-      });
-      loadRecentFolders();
+      await removeRecentFolder(id);
+      renderRecentFolders();
     });
     el.recentList.appendChild(li);
-  });
+  }
 }
 
 function shorten(p, max = 34) {
@@ -398,26 +404,36 @@ async function openFile(f) {
   syncActiveHighlight();
 }
 
+const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB safety cap for in-browser grid
+
 async function loadFileData(fullPath) {
-  const res = await fetch(`/api/file?fullPath=${encodeURIComponent(fullPath)}`);
-  const data = await res.json();
-  if (!res.ok) {
-    alert(data.error || "Failed to load file");
+  const handle = state.fileHandles.get(fullPath);
+  if (!handle) {
+    alert("File not found (folder may have changed on disk)");
     return;
   }
 
+  const file = await handle.getFile();
+  if (file.size > MAX_FILE_BYTES) {
+    alert("File too large to preview (25MB limit)");
+    return;
+  }
+  const content = await file.text();
+  const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+
   // Handle plain text files (.txt)
-  if (data.type === "text") {
+  if (ext === ".txt") {
     state.tabData[fullPath] = {
       isText: true,
-      content: data.content,
+      content,
     };
     return;
   }
 
   // Handle CSV / TSV grid data
-  const parsed = Papa.parse(data.content, {
-    delimiter: data.delimiter,
+  const delimiter = ext === ".csv" ? "," : "\t";
+  const parsed = Papa.parse(content, {
+    delimiter,
     skipEmptyLines: true,
   });
   const rawRows = parsed.data;
