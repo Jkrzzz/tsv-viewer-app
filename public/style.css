@@ -429,15 +429,18 @@ table.grid input[type="checkbox"] {
 
 table.grid thead th {
   position: sticky;
-  top: 0;
+  top: 35px; /* Set to match the height of your #filter-bar */
   background: var(--bg-alt);
   cursor: pointer;
   user-select: none;
-  z-index: 1;
-}
-table.grid thead th.checkbox-col {
   z-index: 2;
-  cursor: default;
+}
+
+table.grid thead th.checkbox-col {
+  position: sticky;
+  top: 35px; /* Match the top offset */
+  left: 0;
+  z-index: 3;
 }
 table.grid thead th:hover:not(.checkbox-col) {
   background: var(--bg-hover);
@@ -480,6 +483,12 @@ table.grid td:nth-child(6n + 7) {
   background: var(--bg-alt);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+
+  /* Sticky Header Properties */
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 10;
 }
 #filter-bar .filter-input {
   flex: 1;
