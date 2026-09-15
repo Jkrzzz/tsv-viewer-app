@@ -2,9 +2,9 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "public",
-  base: "/tsv-viewer-app/", // Required for GitHub Pages asset resolution
+  base: "/", // Changed from "/tsv-viewer-app/" for custom subdomain root
   build: {
-    outDir: "../dist", // Places production build at root /dist
+    outDir: "../dist",
     emptyOutDir: true,
   },
   server: {
