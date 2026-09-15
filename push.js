@@ -42,7 +42,7 @@ try {
   }
 
   // Launch dev server
-  run("npm run dev");
+  run("npm run deploy");
 } catch (error) {
   console.error("\n❌ Git operation failed. Stopping execution.");
   process.exit(1);
