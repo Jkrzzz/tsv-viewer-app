@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "public",
-  base: "/", // Changed from "/tsv-viewer-app/" for custom subdomain root
+  base: "./", // Use relative base so assets load correctly on custom subdomains
   build: {
     outDir: "../dist",
     emptyOutDir: true,
