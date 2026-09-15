@@ -12,7 +12,7 @@ try {
   run("git add .");
   run(`git commit -m "${commitMsg}"`);
   run(`git push origin ${branch}`);
-  run("npm run dev");
+  run("npm run deploy");
 } catch (error) {
   console.error("\n❌ Operation failed. Stopping execution.");
   process.exit(1);
