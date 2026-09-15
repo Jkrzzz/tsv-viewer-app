@@ -498,6 +498,13 @@ async function openFile(f) {
   state.activeTab = f.fullPath;
 
   if (!state.tabData[f.fullPath]) {
+    renderTabBar();
+    updateMobileCurrentFileLabel();
+    showGridLoading(f.name);
+    // Let the loading state actually paint before the (synchronous, and
+    // potentially slow on big files) parse work below blocks the main
+    // thread — otherwise the browser never gets a chance to show it.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     await loadFileData(f.fullPath);
   }
 
@@ -506,6 +513,20 @@ async function openFile(f) {
   syncActiveHighlight();
   updateMobileCurrentFileLabel();
   closeMobileSidebar();
+}
+
+function showGridLoading(name) {
+  el.gridContainer.onscroll = null;
+  el.gridContainer.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.id = "grid-loading";
+  const spinner = document.createElement("div");
+  spinner.className = "spinner";
+  const label = document.createElement("div");
+  label.textContent = `Reading ${name}…`;
+  wrap.appendChild(spinner);
+  wrap.appendChild(label);
+  el.gridContainer.appendChild(wrap);
 }
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB safety cap for in-browser grid
@@ -530,6 +551,8 @@ async function loadFileData(fullPath) {
     state.tabData[fullPath] = {
       isText: true,
       content,
+      scrollTop: 0,
+      scrollLeft: 0,
     };
     return;
   }
@@ -552,6 +575,8 @@ async function loadFileData(fullPath) {
     hiddenCols: new Set(),
     hiddenRows: new Set(),
     selectedRows: new Set(),
+    scrollTop: 0,
+    scrollLeft: 0,
   };
 }
 
@@ -708,9 +733,11 @@ function hideContextMenu() {
 
 // ---------- Grid rendering ----------
 
+const ROW_HEIGHT = 27; // px — must stay in sync with table.grid tbody tr's rendered height below
+const ROW_OVERSCAN = 12; // extra rows rendered above/below the viewport, as scroll buffer
+
 function renderGrid() {
-  const prevScrollTop = el.gridContainer.scrollTop;
-  const prevScrollLeft = el.gridContainer.scrollLeft;
+  el.gridContainer.onscroll = null;
   el.gridContainer.innerHTML = "";
   if (!state.activeTab) {
     const empty = document.createElement("div");
@@ -729,8 +756,12 @@ function renderGrid() {
     pre.textContent = data.content;
     el.gridContainer.appendChild(pre);
 
-    el.gridContainer.scrollTop = prevScrollTop;
-    el.gridContainer.scrollLeft = prevScrollLeft;
+    el.gridContainer.scrollTop = data.scrollTop;
+    el.gridContainer.scrollLeft = data.scrollLeft;
+    el.gridContainer.onscroll = () => {
+      data.scrollTop = el.gridContainer.scrollTop;
+      data.scrollLeft = el.gridContainer.scrollLeft;
+    };
     return; // Stop here - do not build the CSV table toolbar
   }
   // --- Toolbar (filter + columns dropdown + row hide/show controls) ---
@@ -809,7 +840,6 @@ function renderGrid() {
   });
   columnsDropdown.appendChild(columnsBtn);
   columnsDropdown.appendChild(columnsPanel);
-  toolbarBtns.appendChild(columnsDropdown);
 
   // Row hide / show controls
   const hideRowsBtn = document.createElement("button");
@@ -832,6 +862,11 @@ function renderGrid() {
     renderGrid();
   });
   toolbarBtns.appendChild(unhideRowsBtn);
+
+  // Columns dropdown goes last: its panel is right-aligned to its own
+  // button, so putting the button last (rightmost) keeps the panel from
+  // running off the left edge of narrow/mobile layouts.
+  toolbarBtns.appendChild(columnsDropdown);
 
   filterBar.appendChild(toolbarBtns);
 
@@ -910,9 +945,22 @@ function renderGrid() {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  const MAX_RENDER_ROWS = 5000; // keep the DOM responsive on huge files
-  rows.slice(0, MAX_RENDER_ROWS).forEach((r) => {
+  table.appendChild(tbody);
+
+  el.gridContainer.appendChild(table);
+
+  // --- Virtualized (windowed) row rendering ---
+  // Only the rows actually scrolled into view get real DOM nodes; the rest
+  // of the (possibly huge) row count is represented by two spacer <tr>s
+  // sized to keep the scrollbar/scroll position accurate. This keeps
+  // render cost flat regardless of how many rows the file has, instead of
+  // scaling with total row count.
+  const visibleColCount =
+    1 + data.headers.filter((_, i) => !data.hiddenCols.has(i)).length;
+
+  function buildRow(r, logicalIdx) {
     const tr = document.createElement("tr");
+    if (logicalIdx % 2 === 1) tr.classList.add("row-alt");
     const tdCb = document.createElement("td");
     tdCb.className = "checkbox-col";
     const cb = document.createElement("input");
@@ -931,22 +979,62 @@ function renderGrid() {
       td.textContent = r.cells[i] ?? "";
       tr.appendChild(td);
     });
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-
-  el.gridContainer.appendChild(table);
-
-  if (rows.length > MAX_RENDER_ROWS) {
-    const note = document.createElement("div");
-    note.style.padding = "8px";
-    note.style.color = "var(--text-dim)";
-    note.textContent = `Showing first ${MAX_RENDER_ROWS} of ${rows.length} matching rows. Narrow with the filter to see more.`;
-    el.gridContainer.appendChild(note);
+    return tr;
   }
 
-  el.gridContainer.scrollTop = prevScrollTop;
-  el.gridContainer.scrollLeft = prevScrollLeft;
+  function spacerRow(heightPx) {
+    const tr = document.createElement("tr");
+    tr.className = "row-spacer";
+    const td = document.createElement("td");
+    td.colSpan = visibleColCount;
+    td.style.cssText = `height:${heightPx}px; padding:0; border:none;`;
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function renderVisibleRows(scrollTopOverride) {
+    const scrollTop =
+      scrollTopOverride !== undefined
+        ? scrollTopOverride
+        : el.gridContainer.scrollTop;
+    const viewportHeight = el.gridContainer.clientHeight || 600;
+    const total = rows.length;
+    const startIdx = Math.max(
+      0,
+      Math.floor(scrollTop / ROW_HEIGHT) - ROW_OVERSCAN,
+    );
+    const endIdx = Math.min(
+      total,
+      Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + ROW_OVERSCAN,
+    );
+
+    tbody.innerHTML = "";
+    if (startIdx > 0) tbody.appendChild(spacerRow(startIdx * ROW_HEIGHT));
+    for (let i = startIdx; i < endIdx; i++) {
+      tbody.appendChild(buildRow(rows[i], i));
+    }
+    if (endIdx < total) {
+      tbody.appendChild(spacerRow((total - endIdx) * ROW_HEIGHT));
+    }
+  }
+
+  // Build the window for the tab's own *remembered* scroll position first —
+  // reading el.gridContainer.scrollTop here would be 0, since the spacer
+  // rows that give the table its real scrollable height don't exist yet.
+  renderVisibleRows(data.scrollTop);
+  el.gridContainer.scrollTop = data.scrollTop;
+  el.gridContainer.scrollLeft = data.scrollLeft;
+
+  el.gridContainer.onscroll = () => {
+    data.scrollTop = el.gridContainer.scrollTop;
+    data.scrollLeft = el.gridContainer.scrollLeft;
+    if (el.gridContainer._rafScheduled) return;
+    el.gridContainer._rafScheduled = true;
+    requestAnimationFrame(() => {
+      el.gridContainer._rafScheduled = false;
+      renderVisibleRows();
+    });
+  };
 }
 
 function escapeHtml(s) {

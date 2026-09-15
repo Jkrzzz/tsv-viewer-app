@@ -171,6 +171,32 @@ html {
   border-radius: 4px;
 }
 
+#grid-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 #reconnect-banner {
   margin: 8px;
 }
@@ -433,6 +459,7 @@ table.grid th,
 table.grid td {
   border: 1px solid var(--border);
   padding: 4px 10px;
+  line-height: 17px; /* padding(4+4) + border(1+1) + this = 27px, matching ROW_HEIGHT in app.js */
   text-align: left;
   white-space: nowrap;
 }
@@ -450,7 +477,7 @@ table.grid td.checkbox-col {
 table.grid td.checkbox-col {
   background: var(--bg);
 }
-table.grid tbody tr:nth-child(even) td.checkbox-col {
+table.grid tbody tr.row-alt td.checkbox-col {
   background: #232323;
 }
 table.grid tbody tr:hover td.checkbox-col {
@@ -479,11 +506,18 @@ table.grid thead th:hover:not(.checkbox-col) {
   background: var(--bg-hover);
 }
 
-table.grid tbody tr:nth-child(even) {
+/* Zebra striping is applied via this class (set in JS from each row's
+   logical/filtered index) rather than :nth-child(even) — virtualization
+   renders two spacer <tr>s that stand in for many skipped rows, which
+   would throw off nth-child-based alternation. */
+table.grid tbody tr.row-alt {
   background: #232323;
 }
 table.grid tbody tr:hover {
   background: var(--bg-hover);
+}
+table.grid tbody tr.row-spacer:hover {
+  background: none;
 }
 
 /* Rainbow column coloring, like Rainbow CSV (offset by the checkbox column) */
@@ -774,6 +808,7 @@ table.grid td:nth-child(6n + 7) {
   .toolbar-btns {
     flex-wrap: wrap;
     width: 100%;
+    justify-content: flex-end;
   }
   #filter-bar .row-count {
     flex: 1 1 100%;
