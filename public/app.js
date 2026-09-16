@@ -76,7 +76,8 @@ function fileIconSVG(ext) {
 // ---------- Init ----------
 
 const supportsFileSystemAccess = "showDirectoryPicker" in window;
-const supportsDirectoryInput = "webkitdirectory" in document.createElement("input");
+const supportsDirectoryInput =
+  "webkitdirectory" in document.createElement("input");
 
 async function init() {
   if (!supportsFileSystemAccess && !supportsDirectoryInput) {
@@ -366,13 +367,19 @@ async function renderRecentFolders() {
   for (const { id, handle, name } of folders) {
     const permState = await permissionState(handle);
     const li = document.createElement("li");
-    const lockBadge = permState !== "granted" ? `<span class="perm-lock" title="Will ask for permission again">🔒</span>` : "";
+    const lockBadge =
+      permState !== "granted"
+        ? `<span class="perm-lock" title="Will ask for permission again">🔒</span>`
+        : "";
     li.innerHTML = `${folderIconSVG(false)}<span title="${escapeHtml(name)}">${escapeHtml(shorten(name))}</span>${lockBadge}<span class="remove-recent" title="Remove">✕</span>`;
-    li.querySelector("span:nth-child(2)").addEventListener("click", async () => {
-      const ok = await verifyPermission(handle, true); // click = user gesture
-      if (ok) openFolderHandle(handle);
-      else alert(`Permission to read "${name}" was denied.`);
-    });
+    li.querySelector("span:nth-child(2)").addEventListener(
+      "click",
+      async () => {
+        const ok = await verifyPermission(handle, true); // click = user gesture
+        if (ok) openFolderHandle(handle);
+        else alert(`Permission to read "${name}" was denied.`);
+      },
+    );
     li.querySelector(".remove-recent").addEventListener("click", async (e) => {
       e.stopPropagation();
       await removeRecentFolder(id);
@@ -529,7 +536,7 @@ function showGridLoading(name) {
   el.gridContainer.appendChild(wrap);
 }
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB safety cap for in-browser grid
+// 25MB safety cap for in-browser grid
 
 async function loadFileData(fullPath) {
   const handle = state.fileHandles.get(fullPath);
@@ -539,7 +546,7 @@ async function loadFileData(fullPath) {
   }
 
   const file = await handle.getFile();
-  if (file.size > MAX_FILE_BYTES) {
+  if (file.size > settings.get("maxFileBytes")) {
     alert("File too large to preview (25MB limit)");
     return;
   }

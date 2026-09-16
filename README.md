@@ -85,7 +85,7 @@ custom domain lives in `static-assets/CNAME` and is copied into every build.
 ## Notes / limits
 
 - Files over 25MB are not loaded (safety cap for in-browser rendering);
-  raise `MAX_FILE_BYTES` in `public/app.js` if you need larger files.
+  raise `maxFileBytes` in `public/settings.js` if you need larger files.
 - Only the first 5,000 filtered rows are rendered in the DOM at once for
   performance — narrow with the filter box to see more.
 - Folder access is per-browser-profile and per-origin — recent folders

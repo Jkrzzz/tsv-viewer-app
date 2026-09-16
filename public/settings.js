@@ -2,6 +2,7 @@ const DEFAULT_SETTINGS = {
   expandSubfoldersOnOpen: false,
   sidebarWidth: "260px",
   recentFoldersCollapsed: true,
+  maxFileBytes: 25 * 1024 * 1024,
 };
 
 export const settings = {
