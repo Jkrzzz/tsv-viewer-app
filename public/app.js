@@ -536,6 +536,111 @@ function showGridLoading(name) {
   el.gridContainer.appendChild(wrap);
 }
 
+// ---------- .txt → table support ----------
+
+function parseTextToTable(data) {
+  let raw;
+  if (data.delimiter === "space") {
+    // Papa can't split on "one or more spaces", so do it by hand
+    raw = data.content
+      .split(/\r?\n/)
+      .filter((l) => l.trim() !== "")
+      .map((l) => l.trim().split(/\s+/));
+  } else {
+    const opts = { skipEmptyLines: true };
+    if (data.delimiter === "auto") {
+      opts.delimiter = "";
+      opts.delimitersToGuess = [",", "\t", "|", ";"];
+    } else {
+      opts.delimiter = data.delimiter;
+    }
+    raw = Papa.parse(data.content, opts).data;
+  }
+
+  const width = raw.reduce((m, r) => Math.max(m, r.length), 0);
+  let body = raw;
+  if (data.firstRowHeader && raw.length) {
+    data.headers = raw[0];
+    body = raw.slice(1);
+  } else {
+    data.headers = Array.from({ length: width }, (_, i) => `Column ${i + 1}`);
+  }
+  data.rows = body.map((cells, id) => ({ id, cells }));
+
+  // reset view state that depends on the old parse
+  data.sortCol = null;
+  data.sortDir = 1;
+  data.filter = "";
+  data.hiddenCols = new Set();
+  data.hiddenRows = new Set();
+  data.selectedRows = new Set();
+  data.scrollTop = 0;
+  data.scrollLeft = 0;
+}
+
+function buildTextControls(data) {
+  const wrap = document.createElement("div");
+  wrap.className = "text-controls";
+
+  const makeModeBtn = (label, mode) => {
+    const b = document.createElement("button");
+    b.className = "toolbar-btn" + (data.viewMode === mode ? " active" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      if (data.viewMode === mode) return;
+      data.viewMode = mode;
+      if (mode === "table") parseTextToTable(data);
+      data.scrollTop = 0;
+      data.scrollLeft = 0;
+      renderGrid();
+    });
+    return b;
+  };
+  wrap.appendChild(makeModeBtn("Text", "text"));
+  wrap.appendChild(makeModeBtn("Table", "table"));
+
+  if (data.viewMode === "table") {
+    const sel = document.createElement("select");
+    sel.className = "toolbar-btn";
+    sel.title = "Column delimiter";
+    [
+      ["auto", "Auto-detect"],
+      [",", "Comma ,"],
+      ["\t", "Tab"],
+      [";", "Semicolon ;"],
+      ["|", "Pipe |"],
+      ["space", "Spaces"],
+    ].forEach(([value, label]) => {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      o.selected = data.delimiter === value;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => {
+      data.delimiter = sel.value;
+      parseTextToTable(data);
+      renderGrid();
+    });
+    wrap.appendChild(sel);
+
+    const hdrLabel = document.createElement("label");
+    hdrLabel.className = "header-toggle";
+    const hdrCb = document.createElement("input");
+    hdrCb.type = "checkbox";
+    hdrCb.checked = data.firstRowHeader;
+    hdrCb.addEventListener("change", () => {
+      data.firstRowHeader = hdrCb.checked;
+      parseTextToTable(data);
+      renderGrid();
+    });
+    hdrLabel.appendChild(hdrCb);
+    hdrLabel.append(" First row is header");
+    wrap.appendChild(hdrLabel);
+  }
+  return wrap;
+}
+
 // 25MB safety cap for in-browser grid
 
 async function loadFileData(fullPath) {
@@ -558,6 +663,18 @@ async function loadFileData(fullPath) {
     state.tabData[fullPath] = {
       isText: true,
       content,
+      viewMode: "text", // "text" | "table"
+      delimiter: "auto", // "auto" | "," | "\t" | ";" | "|" | "space"
+      firstRowHeader: true,
+      // table fields, filled by parseTextToTable() when needed
+      headers: [],
+      rows: [],
+      sortCol: null,
+      sortDir: 1,
+      filter: "",
+      hiddenCols: new Set(),
+      hiddenRows: new Set(),
+      selectedRows: new Set(),
       scrollTop: 0,
       scrollLeft: 0,
     };
@@ -757,7 +874,12 @@ function renderGrid() {
 
   const data = state.tabData[state.activeTab];
   if (!data) return;
-  if (data.isText) {
+  if (data.isText && data.viewMode === "text") {
+    const bar = document.createElement("div");
+    bar.id = "filter-bar";
+    bar.appendChild(buildTextControls(data));
+    el.gridContainer.appendChild(bar);
+
     const pre = document.createElement("pre");
     pre.className = "text-preview";
     pre.textContent = data.content;
@@ -769,7 +891,7 @@ function renderGrid() {
       data.scrollTop = el.gridContainer.scrollTop;
       data.scrollLeft = el.gridContainer.scrollLeft;
     };
-    return; // Stop here - do not build the CSV table toolbar
+    return;
   }
   // --- Toolbar (filter + columns dropdown + row hide/show controls) ---
   const filterBar = document.createElement("div");
@@ -858,6 +980,7 @@ function renderGrid() {
     data.selectedRows.clear();
     renderGrid();
   });
+  if (data.isText) toolbarBtns.appendChild(buildTextControls(data));
   toolbarBtns.appendChild(hideRowsBtn);
 
   const unhideRowsBtn = document.createElement("button");

@@ -829,3 +829,20 @@ table.grid td:nth-child(6n + 7) {
     -webkit-overflow-scrolling: touch;
   }
 }
+.text-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.text-controls .toolbar-btn.active {
+  background: #0e639c;
+  color: #fff;
+}
+.text-controls .header-toggle {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
